@@ -19,4 +19,10 @@ public class ScraperController {
         // Using the validated request DTO
         return scraperServices.scrapeAraiToCSV(request.getSource(), request.getLimit());
     }
+    
+    @GetMapping("/")
+    public String home() {
+        return "API is running!";
+    }
+
 }

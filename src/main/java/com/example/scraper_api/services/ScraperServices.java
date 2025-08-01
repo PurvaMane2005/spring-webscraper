@@ -8,6 +8,8 @@ import com.example.scraper_api.repository.ScrapeHistoryRepository;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.support.ui.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +22,8 @@ import java.util.List;
 @Service
 public class ScraperServices {
 
+    private static final Logger logger = LoggerFactory.getLogger(ScraperServices.class);
+
     @Autowired
     private ScrapedDataRepository scrapedDataRepository;
 
@@ -27,6 +31,8 @@ public class ScraperServices {
     private ScrapeHistoryRepository scrapeHistoryRepository;
 
     public String scrapeAraiToCSV(String source, int limit) {
+        logger.info("🟡 Starting scrape. Source: {}, Limit: {}", source, limit);
+
         System.setProperty("webdriver.chrome.driver",
                 "C:\\Users\\Z0314682\\OneDrive - ZF Friedrichshafen AG\\Desktop\\Demo\\ChromeDriver\\chromedriver-win64\\chromedriver-win64\\chromedriver.exe");
 
@@ -43,14 +49,19 @@ public class ScraperServices {
             }
 
             driver.get(url);
+            logger.info("🌐 Navigated to URL: {}", url);
 
             List<WebElement> rows = fetchAraiRows(driver);
 
             int rowsToWrite = Math.min(limit, rows.size());
-            System.out.println("✅ Scraping " + rowsToWrite + " of " + rows.size() + " rows");
+            logger.info("✅ Scraping {} of {} rows", rowsToWrite, rows.size());
+            
+            scrapedDataRepository.deleteAll();
+            logger.info("🧹 Old scraped data deleted.");
 
             try (FileWriter csvWriter = new FileWriter("output.csv")) {
                 csvWriter.append("Sr.,Code,Title,Attached Files\n");
+
 
                 for (int i = 0; i < rowsToWrite; i++) {
                     WebElement row = rows.get(i);
@@ -72,8 +83,9 @@ public class ScraperServices {
                 }
 
                 csvWriter.flush();
-
-                // ✅ Log success
+                logger.info("✅ CSV file written successfully.");
+                
+                scrapeHistoryRepository.deleteAll();
                 ScrapeHistory history = new ScrapeHistory();
                 history.setSource(source);
                 history.setTimestamp(LocalDateTime.now());
@@ -81,26 +93,30 @@ public class ScraperServices {
                 history.setStatus("SUCCESS");
                 scrapeHistoryRepository.save(history);
 
+                logger.info("✅ Scrape history saved with status SUCCESS.");
                 return "✅ Data written to output.csv and saved to DB (Rows saved: " + rowsToWrite + ")";
             } catch (IOException e) {
+                logger.error("❌ Failed to write CSV file: {}", e.getMessage());
                 logFailure(source, 0);
                 throw new RuntimeException("❌ Failed to write CSV file: " + e.getMessage(), e);
             }
 
         } catch (ScraperException e) {
+            logger.error("❌ ScraperException occurred: {}", e.getMessage());
             logFailure(source, 0);
             throw e;
         } catch (Exception e) {
+            logger.error("⚠️ Unexpected error occurred: {}", e.getMessage(), e);
             logFailure(source, 0);
             throw new RuntimeException("⚠️ Unexpected error: " + e.getMessage(), e);
         } finally {
             if (driver != null) {
                 driver.quit();
+                logger.info("🧹 Browser closed.");
             }
         }
     }
 
-    // ✅ Extracted for mocking in tests
     protected List<WebElement> fetchAraiRows(WebDriver driver) {
         WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
         try {
@@ -120,5 +136,6 @@ public class ScraperServices {
         history.setRowsSaved(rowsSaved);
         history.setStatus("FAILED");
         scrapeHistoryRepository.save(history);
+        logger.warn("❌ Scrape failed. Source: {}, Rows saved: {}", source, rowsSaved);
     }
 }
